@@ -418,6 +418,135 @@ const markAttendance = async (req, res) => {
   }
 };
 
+// Bulk Mark Attendance (faculty, admin, nodal_officer)
+const bulkMarkAttendance = async (req, res) => {
+  try {
+    const { course_id, date, students } = req.body;
+    const marker = req.user;
+
+    if (!course_id || !date || !students || !Array.isArray(students)) {
+      return res.status(400).json({ error: 'course_id, date, and students array are required' });
+    }
+
+    if (!['nodal_officer', 'admin', 'faculty'].includes(marker.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions to mark attendance' });
+    }
+
+    const course = await Course.findById(course_id).populate('program_id');
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+
+    // Node ownership check
+    if (!course.program_id.node_id.equals(marker.node_id._id)) {
+      return res.status(403).json({ error: 'Course not in your node' });
+    }
+
+    // Faculty must be assigned to the course
+    if (marker.role === 'faculty') {
+      const isAssigned = await FacultyAssignment.findOne({ course_id, faculty_id: marker._id });
+      if (!isAssigned) {
+        return res.status(403).json({ error: 'You are not assigned to this course' });
+      }
+    }
+
+    const attDate = new Date(date);
+    const results = [];
+
+    for (const studentData of students) {
+      const { student_id, status } = studentData;
+      
+      // Validate student and enrollment
+      const student = await User.findById(student_id);
+      if (!student || student.role !== 'student' || !student.node_id.equals(marker.node_id._id)) {
+        results.push({ student_id, status: 'failed', error: 'Invalid student or not in your node' });
+        continue;
+      }
+
+      const enrollment = await Enrollment.findOne({ course_id, student_id });
+      if (!enrollment) {
+        results.push({ student_id, status: 'failed', error: 'Student not enrolled in this course' });
+        continue;
+      }
+
+      // Upsert attendance
+      try {
+        const attendance = await Attendance.findOneAndUpdate(
+          { course_id, student_id, date: attDate },
+          { $set: { status, marked_by: marker._id } },
+          { new: true, upsert: true, setDefaultsOnInsert: true }
+        );
+        results.push({ student_id, status: 'success', attendance });
+      } catch (err) {
+        results.push({ student_id, status: 'failed', error: err.message });
+      }
+    }
+
+    res.status(201).json({ message: 'Bulk attendance processed', results });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Get Attendance Records (faculty, admin, nodal_officer can view; students can view own)
+const getAttendance = async (req, res) => {
+  try {
+    const requester = req.user;
+    const { course_id, student_id, date } = req.query;
+
+    // Build query
+    let query = {};
+    
+    if (course_id) {
+      // Verify course access
+      const course = await Course.findById(course_id).populate('program_id');
+      if (!course) return res.status(404).json({ error: 'Course not found' });
+      
+      if (!course.program_id.node_id.equals(requester.node_id._id)) {
+        return res.status(403).json({ error: 'Course not in your node' });
+      }
+      
+      query.course_id = course_id;
+    }
+
+    if (student_id) {
+      // Students can only view their own attendance
+      if (requester.role === 'student' && student_id !== String(requester._id)) {
+        return res.status(403).json({ error: 'Students can only view their own attendance' });
+      }
+      
+      // Verify student is in same node
+      const student = await User.findById(student_id);
+      if (!student || !student.node_id.equals(requester.node_id._id)) {
+        return res.status(403).json({ error: 'Student not in your node' });
+      }
+      
+      query.student_id = student_id;
+    } else if (requester.role === 'student') {
+      // If student doesn't specify student_id, show their own
+      query.student_id = requester._id;
+    }
+
+    if (date) {
+      const searchDate = new Date(date);
+      query.date = searchDate;
+    }
+
+    // If no filters provided and user is student, show their attendance
+    if (Object.keys(query).length === 0 && requester.role === 'student') {
+      query.student_id = requester._id;
+    }
+
+    const attendance = await Attendance.find(query)
+      .populate('course_id', 'course_name')
+      .populate('student_id', 'name email')
+      .populate('marked_by', 'name email role')
+      .sort({ date: -1, createdAt: -1 });
+
+    res.json({ attendance });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // Get or compute Progress (student can view own; others limited by node)
 const getProgress = async (req, res) => {
   try {
@@ -526,6 +655,8 @@ module.exports = {
   getPrograms,
   getCourses,
   markAttendance,
+  bulkMarkAttendance,
+  getAttendance,
   getProgress,
   generateCertificate
 };

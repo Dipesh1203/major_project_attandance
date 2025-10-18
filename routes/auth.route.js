@@ -10,6 +10,8 @@ const {
   getPrograms,
   getCourses,
   markAttendance,
+  bulkMarkAttendance,
+  getAttendance,
   getProgress,
   generateCertificate
 } = require('../controllers/auth.controller');
@@ -38,6 +40,8 @@ router.post('/enroll', auth, authorize('nodal_officer', 'admin'), enrollStudent)
 
 // Attendance routes
 router.post('/attendance', auth, authorize('nodal_officer', 'admin', 'faculty'), markAttendance);
+router.post('/attendance/bulk', auth, authorize('nodal_officer', 'admin', 'faculty'), bulkMarkAttendance);
+router.get('/attendance', auth, getAttendance);
 
 // Progress routes
 router.get('/progress', auth, getProgress);

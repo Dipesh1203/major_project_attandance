@@ -589,7 +589,7 @@ const MarkAttendanceForm = () => {
   };
 
   return (
-    <Card title="Mark Attendance">
+    <Card title="Mark Individual Attendance">
       <form onSubmit={handleSubmit} className="space-y-4">
         {message && <Alert type={message.type} message={message.text} onClose={() => setMessage(null)} />}
 
@@ -648,6 +648,8 @@ const MarkAttendanceForm = () => {
             >
               <option value="present">Present</option>
               <option value="absent">Absent</option>
+              <option value="late">Late</option>
+              <option value="excused">Excused</option>
             </select>
           </div>
         </div>
@@ -660,6 +662,283 @@ const MarkAttendanceForm = () => {
           {loading ? 'Marking...' : 'Mark Attendance'}
         </button>
       </form>
+    </Card>
+  );
+};
+
+const BulkMarkAttendanceForm = () => {
+  const { token } = useAuth();
+  const [courses, setCourses] = useState([]);
+  const [enrolledStudents, setEnrolledStudents] = useState([]);
+  const [courseId, setCourseId] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [studentStatuses, setStudentStatuses] = useState({});
+  const [message, setMessage] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        const data = await apiCall('/courses', 'GET', null, token);
+        setCourses(data.courses || []);
+      } catch (err) {
+        console.error('Failed to fetch courses:', err);
+      }
+    };
+    fetchCourses();
+  }, [token]);
+
+  useEffect(() => {
+    const fetchEnrolledStudents = async () => {
+      if (!courseId) {
+        setEnrolledStudents([]);
+        return;
+      }
+      
+      try {
+        const usersData = await apiCall('/users', 'GET', null, token);
+        const students = (usersData.users || []).filter((u) => u.role === 'student');
+        setEnrolledStudents(students);
+        
+        // Initialize all students as present by default
+        const initialStatuses = {};
+        students.forEach(student => {
+          initialStatuses[student._id] = 'present';
+        });
+        setStudentStatuses(initialStatuses);
+      } catch (err) {
+        console.error('Failed to fetch students:', err);
+      }
+    };
+    
+    fetchEnrolledStudents();
+  }, [courseId, token]);
+
+  const handleStatusChange = (studentId, status) => {
+    setStudentStatuses({ ...studentStatuses, [studentId]: status });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setMessage(null);
+    setLoading(true);
+
+    try {
+      const students = Object.entries(studentStatuses).map(([student_id, status]) => ({
+        student_id,
+        status,
+      }));
+
+      const data = await apiCall('/attendance/bulk', 'POST', { course_id: courseId, date, students }, token);
+      setMessage({ type: 'success', text: data.message || 'Bulk attendance marked successfully' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card title="Bulk Mark Attendance">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {message && <Alert type={message.type} message={message.text} onClose={() => setMessage(null)} />}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Course</label>
+            <select
+              value={courseId}
+              onChange={(e) => setCourseId(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+              required
+            >
+              <option value="">Select a course</option>
+              {courses.map((course) => (
+                <option key={course._id} value={course._id}>
+                  {course.course_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Date</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+              required
+            />
+          </div>
+        </div>
+
+        {enrolledStudents.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-3">Mark Attendance for Students</label>
+            <div className="space-y-2 max-h-96 overflow-y-auto border border-slate-200 rounded-lg p-3">
+              {enrolledStudents.map((student) => (
+                <div key={student._id} className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg">
+                  <span className="text-sm font-medium text-slate-800">{student.name}</span>
+                  <select
+                    value={studentStatuses[student._id] || 'present'}
+                    onChange={(e) => handleStatusChange(student._id, e.target.value)}
+                    className="px-3 py-1 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  >
+                    <option value="present">Present</option>
+                    <option value="absent">Absent</option>
+                    <option value="late">Late</option>
+                    <option value="excused">Excused</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading || !courseId || enrolledStudents.length === 0}
+          className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {loading ? 'Marking...' : `Mark Attendance for ${enrolledStudents.length} Students`}
+        </button>
+      </form>
+    </Card>
+  );
+};
+
+const AttendanceViewer = () => {
+  const { token } = useAuth();
+  const [courses, setCourses] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [filters, setFilters] = useState({ course_id: '', date: '' });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        const data = await apiCall('/courses', 'GET', null, token);
+        setCourses(data.courses || []);
+      } catch (err) {
+        console.error('Failed to fetch courses:', err);
+      }
+    };
+    fetchCourses();
+  }, [token]);
+
+  const fetchAttendance = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const query = new URLSearchParams(filters).toString();
+      const data = await apiCall(`/attendance?${query}`, 'GET', null, token);
+      setAttendance(data.attendance || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAttendance();
+  }, [token]);
+
+  const handleFilter = () => {
+    fetchAttendance();
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'present': return 'bg-green-100 text-green-800';
+      case 'absent': return 'bg-red-100 text-red-800';
+      case 'late': return 'bg-yellow-100 text-yellow-800';
+      case 'excused': return 'bg-blue-100 text-blue-800';
+      default: return 'bg-slate-100 text-slate-800';
+    }
+  };
+
+  return (
+    <Card title="View Attendance Records">
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Filter by Course</label>
+            <select
+              value={filters.course_id}
+              onChange={(e) => setFilters({ ...filters, course_id: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+            >
+              <option value="">All Courses</option>
+              {courses.map((course) => (
+                <option key={course._id} value={course._id}>
+                  {course.course_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Filter by Date</label>
+            <input
+              type="date"
+              value={filters.date}
+              onChange={(e) => setFilters({ ...filters, date: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+            />
+          </div>
+
+          <div className="flex items-end">
+            <button
+              onClick={handleFilter}
+              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition"
+            >
+              Apply Filters
+            </button>
+          </div>
+        </div>
+
+        {error && <Alert type="error" message={error} onClose={() => setError('')} />}
+
+        {loading ? (
+          <p className="text-slate-600 text-center py-4">Loading...</p>
+        ) : attendance.length === 0 ? (
+          <p className="text-slate-600 text-center py-4">No attendance records found</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Date</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Course</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Student</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Status</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Marked By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attendance.map((record) => (
+                  <tr key={record._id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="py-3 px-4 text-sm text-slate-800">
+                      {new Date(record.date).toLocaleDateString()}
+                    </td>
+                    <td className="py-3 px-4 text-sm text-slate-800">{record.course_id?.course_name}</td>
+                    <td className="py-3 px-4 text-sm text-slate-800">{record.student_id?.name}</td>
+                    <td className="py-3 px-4 text-sm">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${getStatusColor(record.status)}`}>
+                        {record.status}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-sm text-slate-600">{record.marked_by?.name}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </Card>
   );
 };
@@ -1024,6 +1303,7 @@ const AdminDashboard = () => {
     { id: 'programs', label: 'Manage Programs' },
     { id: 'courses', label: 'Manage Courses' },
     { id: 'enroll', label: 'Enrollment' },
+    { id: 'attendance', label: 'Attendance' },
     { id: 'certificates', label: 'Certificates' },
   ];
 
@@ -1088,6 +1368,16 @@ const AdminDashboard = () => {
 
           {activeTab === 'enroll' && <EnrollStudentForm />}
 
+          {activeTab === 'attendance' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <BulkMarkAttendanceForm />
+                <MarkAttendanceForm />
+              </div>
+              <AttendanceViewer />
+            </div>
+          )}
+
           {activeTab === 'certificates' && <GenerateCertificateForm />}
         </div>
       </div>
@@ -1100,7 +1390,7 @@ const FacultyDashboard = () => {
 
   const tabs = [
     { id: 'overview', label: 'Overview' },
-    { id: 'attendance', label: 'Mark Attendance' },
+    { id: 'attendance', label: 'Attendance' },
   ];
 
   return (
@@ -1141,7 +1431,15 @@ const FacultyDashboard = () => {
             </div>
           )}
 
-          {activeTab === 'attendance' && <MarkAttendanceForm />}
+          {activeTab === 'attendance' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <BulkMarkAttendanceForm />
+                <MarkAttendanceForm />
+              </div>
+              <AttendanceViewer />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1155,6 +1453,7 @@ const StudentDashboard = () => {
     { id: 'overview', label: 'Overview' },
     { id: 'programs', label: 'Programs' },
     { id: 'courses', label: 'Courses' },
+    { id: 'attendance', label: 'My Attendance' },
     { id: 'progress', label: 'My Progress' },
   ];
 
@@ -1195,6 +1494,7 @@ const StudentDashboard = () => {
 
           {activeTab === 'programs' && <ProgramsList />}
           {activeTab === 'courses' && <CoursesList />}
+          {activeTab === 'attendance' && <AttendanceViewer />}
           {activeTab === 'progress' && <ProgressView />}
         </div>
       </div>
