@@ -24,6 +24,9 @@ curl -X POST http://localhost:3000/api/auth/login \
 **Response:** You'll receive a JWT token. Use it in subsequent requests.
 
 **Mark Bulk Attendance**
+
+First, get the course ID from the courses endpoint or from the seed data output.
+
 ```bash
 curl -X POST http://localhost:3000/api/auth/attendance/bulk \
   -H "Content-Type: application/json" \
@@ -38,6 +41,11 @@ curl -X POST http://localhost:3000/api/auth/attendance/bulk \
     ]
   }'
 ```
+
+**Note**: Get course IDs and student IDs from:
+- `GET /api/auth/courses` for course IDs
+- `GET /api/auth/users` for student IDs
+- Or check the output of `npm run seed` command
 
 **Expected Result:** All students' attendance marked for the specified date.
 
@@ -203,7 +211,11 @@ curl -X POST http://localhost:3000/api/auth/attendance \
 
 - Bulk marking is more efficient than individual API calls for each student
 - Recommended batch size: 30-50 students per bulk request
+  - Based on typical MongoDB document size limits and network latency
+  - Keeps request/response payload manageable
+  - Provides good balance between efficiency and reliability
 - For larger classes (100+ students), consider splitting into multiple batches
+- Each bulk request processes students sequentially to ensure data consistency
 
 ---
 

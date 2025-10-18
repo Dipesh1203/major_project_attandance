@@ -3,7 +3,7 @@
 ## New Components Added
 
 ### 1. Bulk Mark Attendance Form
-**Location**: Admin Dashboard → Attendance Tab | Faculty Dashboard → Attendance Tab
+**Locations**: Admin Dashboard > Attendance Tab, Faculty Dashboard > Attendance Tab
 
 **Features**:
 - Select course from dropdown
@@ -20,7 +20,7 @@
 ---
 
 ### 2. Individual Attendance Form
-**Location**: Admin Dashboard → Attendance Tab | Faculty Dashboard → Attendance Tab
+**Locations**: Admin Dashboard > Attendance Tab, Faculty Dashboard > Attendance Tab
 
 **Features**:
 - Select course
@@ -37,10 +37,10 @@
 ---
 
 ### 3. Attendance Viewer
-**Location**: 
-- Admin Dashboard → Attendance Tab
-- Faculty Dashboard → Attendance Tab
-- Student Dashboard → My Attendance Tab
+**Locations**: 
+- Admin Dashboard > Attendance Tab
+- Faculty Dashboard > Attendance Tab
+- Student Dashboard > My Attendance Tab
 
 **Features**:
 - Filter by course
@@ -83,6 +83,8 @@ Contains:
 ---
 
 ## UI Color Scheme
+
+**Note**: This project uses Tailwind CSS for styling.
 
 ### Status Badges
 - **Present**: Green background (`bg-green-100`), green text (`text-green-800`)
